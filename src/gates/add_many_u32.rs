@@ -21,7 +21,7 @@ use plonky2::plonk::circuit_data::{CircuitConfig, CommonCircuitData};
 use plonky2::plonk::vars::{EvaluationTargets, EvaluationVars, EvaluationVarsBase};
 
 const LOG2_MAX_NUM_ADDENDS: usize = 4;
-const MAX_NUM_ADDENDS: usize = 16;
+pub const MAX_NUM_ADDENDS: usize = 16;
 
 /// A gate to perform addition on `num_addends` different 32-bit values, plus a small carry
 #[derive(Copy, Clone, Debug)]

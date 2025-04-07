@@ -13,7 +13,7 @@ use plonky2::iop::target::Target;
 use plonky2::iop::witness::{PartitionWitness, Witness};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
 
-use crate::gates::add_many_u32::U32AddManyGate;
+use crate::gates::add_many_u32::{U32AddManyGate, MAX_NUM_ADDENDS};
 use crate::gates::arithmetic_u32::U32ArithmeticGate;
 use crate::gates::subtraction_u32::U32SubtractionGate;
 use crate::serialization::{ReadU32, WriteU32};
@@ -161,24 +161,8 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderU32<F, D>
             1 => (to_add[0], self.zero_u32()),
             2 => self.add_u32(to_add[0], to_add[1]),
             _ => {
-                let num_addends = to_add.len();
-                let gate = U32AddManyGate::<F, D>::new_from_config(&self.config, num_addends);
-                let (row, copy) =
-                    self.find_slot(gate, &[F::from_canonical_usize(num_addends)], &[]);
-
-                for j in 0..num_addends {
-                    self.connect(
-                        Target::wire(row, gate.wire_ith_op_jth_addend(copy, j)),
-                        to_add[j].0,
-                    );
-                }
-                let zero = self.zero();
-                self.connect(Target::wire(row, gate.wire_ith_carry(copy)), zero);
-
-                let output_low = U32Target(Target::wire(row, gate.wire_ith_output_result(copy)));
-                let output_high = U32Target(Target::wire(row, gate.wire_ith_output_carry(copy)));
-
-                (output_low, output_high)
+                let zero = self.zero_u32();
+                self.add_u32s_with_carry(to_add, zero)
             }
         }
     }
@@ -188,26 +172,28 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderU32<F, D>
         to_add: &[U32Target],
         carry: U32Target,
     ) -> (U32Target, U32Target) {
-        if to_add.len() == 1 {
+        if to_add.is_empty() {
+            return (carry, self.zero_u32());
+        } else if to_add.len() == 1 {
             return self.add_u32(to_add[0], carry);
         }
-
-        let num_addends = to_add.len();
-
-        let gate = U32AddManyGate::<F, D>::new_from_config(&self.config, num_addends);
-        let (row, copy) = self.find_slot(gate, &[F::from_canonical_usize(num_addends)], &[]);
-
-        for j in 0..num_addends {
-            self.connect(
-                Target::wire(row, gate.wire_ith_op_jth_addend(copy, j)),
-                to_add[j].0,
-            );
+        let mut output = carry;
+        let mut output_carry = self.zero_u32();
+        for w in to_add.chunks(MAX_NUM_ADDENDS) {
+            let num_addends = w.len();
+            let gate = U32AddManyGate::<F, D>::new_from_config(&self.config, num_addends);
+            let (row, copy) = self.find_slot(gate, &[F::from_canonical_usize(num_addends)], &[]);
+            for j in 0..num_addends {
+                self.connect(
+                    Target::wire(row, gate.wire_ith_op_jth_addend(copy, j)),
+                    w[j].0,
+                );
+            }
+            self.connect(Target::wire(row, gate.wire_ith_carry(copy)), output.0);
+            output = U32Target(Target::wire(row, gate.wire_ith_output_result(copy)));
+            let extra_carry = U32Target(Target::wire(row, gate.wire_ith_output_carry(copy)));
+            (output_carry, _) = self.add_u32(extra_carry, output_carry);
         }
-        self.connect(Target::wire(row, gate.wire_ith_carry(copy)), carry.0);
-
-        let output = U32Target(Target::wire(row, gate.wire_ith_output_result(copy)));
-        let output_carry = U32Target(Target::wire(row, gate.wire_ith_output_carry(copy)));
-
         (output, output_carry)
     }
 
@@ -304,7 +290,7 @@ mod tests {
         type C = PoseidonGoldilocksConfig;
         type F = <C as GenericConfig<D>>::F;
 
-        const NUM_ADDENDS: usize = 15;
+        const NUM_ADDENDS: usize = 40;
 
         let config = CircuitConfig::standard_recursion_config();
 
