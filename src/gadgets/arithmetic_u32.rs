@@ -20,7 +20,14 @@ use crate::serialization::{ReadU32, WriteU32};
 use crate::witness::GeneratedValuesU32;
 
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct U32Target(pub Target);
+
+impl U32Target {
+    pub fn new_unsafe(target: Target) -> Self {
+        U32Target(target)
+    }
+}
 
 pub trait CircuitBuilderU32<F: RichField + Extendable<D>, const D: usize> {
     fn add_virtual_u32_target(&mut self) -> U32Target;
@@ -65,20 +72,23 @@ pub trait CircuitBuilderU32<F: RichField + Extendable<D>, const D: usize> {
 
     // Returns x - y - borrow, as a pair (result, borrow), where borrow is 0 or 1 depending on whether borrowing from the next digit is required (iff y + borrow > x).
     fn sub_u32(&mut self, x: U32Target, y: U32Target, borrow: U32Target) -> (U32Target, U32Target);
+
+    fn convert_to_u32(&mut self, target: Target) -> U32Target;
 }
 
 impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderU32<F, D>
     for CircuitBuilder<F, D>
 {
     fn add_virtual_u32_target(&mut self) -> U32Target {
-        U32Target(self.add_virtual_target())
+        let target = self.add_virtual_target();
+        self.range_check(target, 32);
+        U32Target(target)
     }
 
     fn add_virtual_u32_targets(&mut self, n: usize) -> Vec<U32Target> {
-        self.add_virtual_targets(n)
-            .into_iter()
-            .map(U32Target)
-            .collect()
+        let targets: Vec<_> = (0..n).map(|_| U32Target(self.add_virtual_target())).collect();
+        crate::gadgets::range_check::range_check_u32_circuit(self, &targets);
+        targets
     }
 
     /// Returns a U32Target for the value `c`, which is assumed to be at most 32 bits.
@@ -218,6 +228,11 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderU32<F, D>
         let output_borrow = U32Target(Target::wire(row, gate.wire_ith_output_borrow(copy)));
 
         (output_result, output_borrow)
+    }
+
+    fn convert_to_u32(&mut self, target: Target) -> U32Target {
+        self.range_check(target,32);
+        U32Target(target)
     }
 }
 
