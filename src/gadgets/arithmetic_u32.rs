@@ -18,8 +18,9 @@ use crate::gates::arithmetic_u32::U32ArithmeticGate;
 use crate::gates::subtraction_u32::U32SubtractionGate;
 use crate::serialization::{ReadU32, WriteU32};
 use crate::witness::GeneratedValuesU32;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct U32Target(pub Target);
 
